@@ -1,18 +1,20 @@
 // src/TelegramSource.ts
-import { TelegramClient } from 'telegram';
-import { StringSession } from 'telegram/sessions';
+import {TelegramClient} from 'telegram';
+import {StringSession} from 'telegram/sessions';
 import fs from 'fs';
 import path from 'path';
-import { Source } from './Source';
+import {Source} from './Source';
+import {Channel, PrismaClient} from "@prisma/client";
 
 export class TelegramSource implements Source {
     private client: TelegramClient;
     private channelUsername: string;
     private lastMessageIdFile: string;
+    private dbClient: PrismaClient;
 
-    constructor(apiId: number, apiHash: string, sessionFile: string, channelUsername: string) {
+    constructor(apiId: number, apiHash: string, sessionFile: string, dbClient: PrismaClient, channelUsername: string) {
         let sessionString = '';
-
+        this.dbClient = dbClient;
         // Check if session file exists and read it
         if (fs.existsSync(sessionFile)) {
             sessionString = fs.readFileSync(sessionFile, 'utf-8');
@@ -36,14 +38,18 @@ export class TelegramSource implements Source {
 
     async fetchData(): Promise<string[]> {
         const channel = await this.client.getEntity(this.channelUsername);
-        const lastMessageId = this.getLastMessageId();
-
-        const messages = await this.client.getMessages(channel, {
-            minId: lastMessageId,
-        });
-
+        const lastMessageId = await this.getLastMessageId();
+        let messages;
+        if (lastMessageId == 0) {
+            messages = await this.client.getMessages(channel, {limit: 10})
+        }else{
+            messages = await this.client.getMessages(channel, {limit: 10})
+            // messages = await this.client.getMessages(channel, {
+            //     minId: lastMessageId,
+            // });
+        }
         if (messages.length > 0) {
-            this.saveLastMessageId(messages[0].id);
+            await this.saveLastMessageId(messages[0].id);
         }
 
         return messages.map((message) => message.message);
@@ -54,15 +60,18 @@ export class TelegramSource implements Source {
         console.log('Disconnected from Telegram');
     }
 
-    private getLastMessageId(): number {
-        if (fs.existsSync(this.lastMessageIdFile)) {
-            const lastMessageId = fs.readFileSync(this.lastMessageIdFile, 'utf-8');
-            return parseInt(lastMessageId, 10);
-        }
-        return 0; // Return 0 if no last message ID is saved, meaning fetch from the latest messages
+    private async getLastMessageId(): Promise<number> {
+        const res =  await this.dbClient.channel.findUnique({
+            where: {channelID: this.channelUsername},
+        });
+        return res?.messageID || 0;
     }
 
-    private saveLastMessageId(messageId: number) {
-        fs.writeFileSync(this.lastMessageIdFile, messageId.toString(), 'utf-8');
+    private async saveLastMessageId(messageId: number) {
+       await this.dbClient.channel.upsert({
+            where: {channelID: this.channelUsername},
+            update: {messageID: messageId},
+            create: {channelID: this.channelUsername, messageID: messageId},
+        });
     }
 }

@@ -1,0 +1,17 @@
+// schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "sqlite" // Use "postgresql" for PostgreSQL in production
+  url       = env("DATABASE_URL")
+  directUrl = "file:./dev.db?mode=rw&cache=shared&_busy_timeout=5000"
+}
+
+model Channel {
+  channelID String   @id @unique
+  messageID Int
+  lastCheck DateTime @default(now()) @updatedAt
+}
