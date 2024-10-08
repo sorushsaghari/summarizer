@@ -4,6 +4,7 @@ from sqlalchemy.orm import sessionmaker
 from source.telegram_source import TelegramSource
 import openai
 import os
+from .source import Source
 
 Base = declarative_base()
 
@@ -12,7 +13,7 @@ class Channel(Base):
     channelID = Column(String, primary_key=True)
     messageID = Column(Integer)
 
-class Bot:
+class Bot(Source):
     def __init__(self, telegram_source: TelegramSource, db_url: str):
         self.telegram_source = telegram_source
         self.engine = create_engine(db_url)
