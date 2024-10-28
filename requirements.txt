@@ -1,3 +1,5 @@
-openai==1.51.2
+dynaconf==3.2.6
+openai==1.52.2
+peewee==3.17.7
 python-dotenv==1.0.1
-SQLAlchemy==2.0.35
+Telethon==1.37.0

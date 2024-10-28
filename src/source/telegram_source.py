@@ -1,71 +1,68 @@
-from sqlalchemy import create_engine, Column, String, Integer
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from source.telegram_source import TelegramSource
-import openai
-import os
-from .source import Source
+# src/source/telegram_source.py
+from mpmath import limit
 
-Base = declarative_base()
+from src.logger_config import get_logger
+from src.session_manager import SessionManager
+from src.source.models import db, Channel
+from src.settings import settings
+from src.source.source import Source
 
-class Channel(Base):
-    __tablename__ = 'channels'
-    channelID = Column(String, primary_key=True)
-    messageID = Column(Integer)
+logger = get_logger(__name__)
 
-class Bot(Source):
-    def __init__(self, telegram_source: TelegramSource, db_url: str):
-        self.telegram_source = telegram_source
-        self.engine = create_engine(db_url)
-        Base.metadata.create_all(self.engine)
-        self.Session = sessionmaker(bind=self.engine)
+class TelegramSource(Source):
+    def __init__(self):
+        self.client = SessionManager().get_client()
+        self.channels = settings.channels
 
-    async def run(self):
-        try:
-            print('Fetching messages...')
-            messages = await self.telegram_source.fetch_data()  # Fetch the last 10 messages
-            await self.process_messages(messages)
-        except Exception as error:
-            print('An error occurred while fetching messages:', error)
+        # Ensure tables are created
+        db.connect()
+        db.create_tables([Channel], safe=True)
+        db.close()
 
-    async def process_messages(self, messages: list[str]):
-        if len(messages) == 0:
-            print('No new messages to process.')
-            return
+    async def fetch_data(self) -> list:
+        await self.client.connect()
+        if not await self.client.is_user_authorized():
+            logger.error("Client is not authorized. Please check your session string.")
+            raise ValueError("Client is not authorized.")
 
-        openai.api_key = os.getenv('OPENAI_API_KEY')
+        new_messages = []
 
-        response = openai.ChatCompletion.create(
-            model='gpt-3.5-turbo',
-            messages=[
-                {
-                    'role': 'system',
-                    'content': 'You are a helpful assistant that summarizes text.'
-                },
-                {
-                    'role': 'user',
-                    'content': f'Please summarize the following post: "{messages}"'
-                }
-            ]
-        )
+        for channel_id in self.channels:
+            last_message_id = self.get_last_message_id(channel_id)
+            logger.debug(f"Fetching messages for channel {channel_id} starting from message ID {last_message_id}")
 
-        print('Processing messages:')
-        for index, message in enumerate(messages):
-            print(f'{index + 1}: {message}')
+            try:
+                # Fetch messages after last_message_id
+                latest_message_id = last_message_id
+                async for message in self.client.iter_messages(channel_id, min_id=last_message_id, limit=10):
+                    if message.text:
+                        reference = f"Channel: {channel_id}, Message ID: {message.id}"
+                        new_messages.append((message.text, reference))
+                        if message.id > latest_message_id:
+                            latest_message_id = message.id
+
+                if latest_message_id > last_message_id:
+                    self.save_last_message_id(channel_id, latest_message_id)
+            except Exception as e:
+                logger.error(f"Error fetching messages from {channel_id}: {e}", exc_info=True)
+
+        await self.client.disconnect()
+        logger.debug("Disconnected Telegram client")
+
+        return new_messages
 
     def get_last_message_id(self, channel_id: str) -> int:
-        session = self.Session()
-        channel = session.query(Channel).filter_by(channelID=channel_id).first()
-        session.close()
-        return channel.messageID if channel else 0
+        try:
+            channel = Channel.get(Channel.channel_id == channel_id)
+            last_id = channel.last_message_id or 0
+        except Channel.DoesNotExist:
+            last_id = 0
+        logger.debug(f"Last message ID for channel {channel_id}: {last_id}")
+        return last_id
 
     def save_last_message_id(self, channel_id: str, message_id: int):
-        session = self.Session()
-        channel = session.query(Channel).filter_by(channelID=channel_id).first()
-        if channel:
-            channel.messageID = message_id
-        else:
-            channel = Channel(channelID=channel_id, messageID=message_id)
-            session.add(channel)
-        session.commit()
-        session.close()
+        Channel.insert(channel_id=channel_id, last_message_id=message_id).on_conflict(
+            update={Channel.last_message_id: message_id},
+            conflict_target=[Channel.channel_id]
+        ).execute()
+        logger.debug(f"Saved last message ID {message_id} for channel {channel_id}")

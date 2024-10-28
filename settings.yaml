@@ -1,0 +1,11 @@
+# settings.yaml
+default:
+  db_url: 'sqlite:///channels.db'
+#  session_string: 'your_session_string'
+  session_path: 'session.txt'
+  channels:
+    - '@amir_ramzali'
+    - '@ramzali_eco'
+    - '@jaryane_eghtesad'
+    - '@mahdirajabi_com'
+    - '@CryptoVizArt'
