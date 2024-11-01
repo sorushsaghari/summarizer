@@ -65,13 +65,12 @@ class Bot:
 
     def create_prompt(self, messages_with_refs):
         prompt = (
-            "You are an AI assistant specializing in fundamental analysis of financial markets such as crypto and forex.\n"
+            "You are an AI assistant specializing in fundamental analysis of financial markets, including crypto, economy, forex, and politics.\n"
             "Please perform the following tasks:\n"
-            "1. **Categorize** the messages into appropriate categories (e.g., Market News, Technical Analysis, Announcements).\n"
-            "2. **Merge** messages that convey the same or similar information.\n"
-            "3. **Summarize** the messages in each category, highlighting key points.\n"
-            "4. **Provide additional insights** or relevant information that may aid in understanding or analysis.\n"
-            "5. **Include references** to the original message sources where applicable.\n\n"
+            "1. **Categorize** the messages into the following categories: Crypto, Economy, Forex, Politics, and others as appropriate.\n"
+            "2. **Group and merge** messages that discuss the same topic (e.g., NFP statistics), even if they come from different sources.\n"
+            "3. **Provide detailed explanations** for each topic, ensuring the summaries are comprehensive enough for understanding without over-summarizing.\n"
+            "4. **Include references** to the original message sources with links to the messages so the reader can access them if needed.\n\n"
             "Here are the messages:\n"
         )
         for i, (message, reference) in enumerate(messages_with_refs, 1):

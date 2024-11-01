@@ -2,16 +2,17 @@ import os
 import asyncio
 from telethon import TelegramClient
 from telethon.sessions import StringSession
-import logging
-logging.basicConfig(level=logging.DEBUG)
+from src.logger_config import setup_logging, get_logger
+from src.settings import settings
+setup_logging()
+
+logger = get_logger(__name__)
 # Load environment variables from a .env file
-from dotenv import load_dotenv
-load_dotenv()
 
 # Get environment variables
-API_ID = int(os.getenv('TELEGRAM_API_ID'))
-API_HASH = os.getenv('TELEGRAM_API_HASH')
-PHONE_NUMBER = os.getenv('TELEGRAM_PHONE_NUMBER')
+API_ID = settings.api_id
+API_HASH = settings.api_hash
+PHONE_NUMBER = '+9809035162320'
 SESSION_FILE = 'session.txt'  # The file where the session string will be saved
 
 # Helper function to get the 2FA password from the user
