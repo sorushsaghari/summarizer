@@ -3,3 +3,4 @@ openai==1.52.2
 peewee==3.17.7
 python-dotenv==1.0.1
 Telethon==1.37.0
+requests==2.31.0
