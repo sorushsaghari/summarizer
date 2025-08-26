@@ -7,6 +7,7 @@ from telethon import TelegramClient
 from src.logger_config import get_logger
 from src.session_manager import SessionManager
 from src.settings import settings
+from src.gitlab_duo_license import GitLabDuoLicenseValidator
 
 logger = get_logger(__name__)
 
@@ -88,12 +89,39 @@ Provide your output as a structured analysis:
         self.openai_api_key = settings.openai_api_key
         openai.api_key = self.openai_api_key
 
+        # Initialize GitLab Duo license validator
+        self.gitlab_license_validator = None
+        if hasattr(settings, 'gitlab_private_token') and settings.gitlab_private_token:
+            try:
+                self.gitlab_license_validator = GitLabDuoLicenseValidator(
+                    gitlab_url=getattr(settings, 'gitlab_url', None),
+                    private_token=settings.gitlab_private_token,
+                    project_id=getattr(settings, 'gitlab_project_id', None)
+                )
+                logger.info("GitLab Duo license validator initialized")
+            except Exception as e:
+                logger.warning(f"Failed to initialize GitLab Duo license validator: {e}")
+        else:
+            logger.info("GitLab Duo license validation disabled (no token provided)")
+
         # Use SessionManager for bot client as well
         self.telegram_client = SessionManager().get_client()
         logger.debug("Bot initialized with provided configuration.")
 
     async def run(self):
         try:
+            # Check GitLab Duo license before proceeding with AI operations
+            if self.gitlab_license_validator:
+                license_info = self.gitlab_license_validator.check_license()
+                if not license_info.is_valid:
+                    logger.error(f"GitLab Duo license validation failed: {license_info.message}")
+                    # Optionally, you could still proceed with basic operations or exit completely
+                    # For now, we'll log the issue but continue (you can change this behavior)
+                    logger.warning("Proceeding without GitLab Duo features validation")
+                else:
+                    logger.info(f"GitLab Duo license validated successfully: {license_info.license_type}")
+                    logger.info(f"Available features: {license_info.features_enabled}")
+            
             await self.telegram_client.start(bot_token=self.bot_token)
             logger.info('Telegram bot client started.')
 
@@ -119,6 +147,20 @@ Provide your output as a structured analysis:
 
     async def process_and_send_messages(self, combined_messages: str):
         try:
+            # Check GitLab Duo license before AI processing
+            if self.gitlab_license_validator:
+                license_check = self._check_ai_license_permissions()
+                if not license_check['allowed']:
+                    logger.error(f"AI operation blocked: {license_check['message']}")
+                    # Send notification about license issue instead of AI summary
+                    await self.send_to_private_channel(
+                        f"⚠️ License Notice: {license_check['message']}\n\n"
+                        f"Raw messages available but AI summarization is restricted."
+                    )
+                    return
+                else:
+                    logger.info(f"AI operation authorized: {license_check['message']}")
+            
             # Use OpenAI to summarize the combined messages
             response = openai.chat.completions.create(
                 model="gpt-4o-mini",
@@ -139,6 +181,47 @@ Provide your output as a structured analysis:
         for i, (message, reference) in enumerate(messages_with_refs, 1):
             prompt += f"{i}. {message} (Reference: {reference})\n"
         return prompt
+
+    def _check_ai_license_permissions(self):
+        """
+        Check if AI operations are allowed based on GitLab Duo license.
+        
+        Returns:
+            dict: {'allowed': bool, 'message': str}
+        """
+        if not self.gitlab_license_validator:
+            return {'allowed': True, 'message': 'No license validation required'}
+        
+        try:
+            license_info = self.gitlab_license_validator.check_license()
+            
+            if not license_info.is_valid:
+                return {
+                    'allowed': False, 
+                    'message': f'GitLab Duo license invalid: {license_info.message}'
+                }
+            
+            # Check if AI features are enabled
+            ai_features = ['code_completion', 'chat_assistance', 'code_generation']
+            available_ai_features = [f for f in ai_features if f in license_info.features_enabled]
+            
+            if not available_ai_features:
+                return {
+                    'allowed': False,
+                    'message': f'No AI features available in {license_info.license_type} license'
+                }
+            
+            return {
+                'allowed': True,
+                'message': f'AI features authorized: {available_ai_features} on {license_info.license_type} license'
+            }
+            
+        except Exception as e:
+            logger.error(f"License check failed: {e}")
+            return {
+                'allowed': False,
+                'message': f'License validation error: {str(e)}'
+            }
 
     async def send_to_private_channel(self, summary: str):
         try:

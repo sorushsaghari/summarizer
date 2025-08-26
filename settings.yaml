@@ -9,3 +9,9 @@ default:
     - '@jaryane_eghtesad'
     - '@mahdirajabi_com'
     - '@CryptoVizArt'
+  
+  # GitLab Duo License Configuration
+  # Uncomment and configure these settings to enable GitLab Duo license validation
+  # gitlab_url: 'https://gitlab.com'  # or your GitLab instance URL
+  # gitlab_private_token: 'your_gitlab_personal_access_token'
+  # gitlab_project_id: 'your_project_id'  # optional, for project-level checks
